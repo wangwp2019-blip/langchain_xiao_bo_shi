@@ -1,0 +1,7 @@
+{
+  "block_words": ["示例屏蔽词"],
+  "redirect_patterns": ["示例引导话题"],
+  "negative_replacements": {
+    "笨蛋": "还在学习的小朋友"
+  }
+}

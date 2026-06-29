@@ -1,0 +1,177 @@
+# 小博士生产拓扑（可按需裁剪）：
+#   nginx(edge) -> backend(gunicorn+uvicorn) -> postgres(记忆) / redis(限流)
+# 最小起步：只起 backend 即可（默认本地后端，离线可跑）。
+#   docker compose up -d --build backend
+
+services:
+  backend:
+    build: .
+    image: kid-assistant-backend
+    environment:
+      KIDS_API_PORT: "8001"
+      WEB_CONCURRENCY: "1"
+      # 多 worker 下建议启用外部后端共享状态：
+      # KIDS_SHORT_TERM_BACKEND: "postgres"
+      # KIDS_MEMORY_BACKEND: "postgres"
+      # KIDS_POSTGRES_URL: "postgresql://kid:kid@postgres:5432/kid_assistant"
+      # KIDS_REDIS_URL: "redis://redis:6379/0"
+      # KIDS_QUIZ_SESSION_BACKEND: "redis"   # 或 mysql / auto
+      # MySQL 业务库（预留，与 Postgres 记忆库并列）：
+      # KIDS_MYSQL_URL: "mysql://kid:kid@mysql:3306/kid_assistant"
+      # KIDS_MYSQL_AUTO_INIT_SCHEMA: "true"
+      # KIDS_METRICS_TOKEN: "dev-metrics-token"  # Prometheus 抓取 /api/metrics
+      # 在线大模型（按需）：
+      # KIDS_LLM_API_KEY: "sk-xxx"
+      # KIDS_LLM_BASE_URL: "https://api.deepseek.com"
+      # KIDS_LLM_MODEL: "deepseek-chat"
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+    #   redis:
+    #     condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kid
+      POSTGRES_PASSWORD: kid
+      POSTGRES_DB: kid_assistant
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["full"]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["full"]
+
+  milvus:
+    image: milvusdb/milvus:v2.4.15
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: local
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvusdata:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["full", "milvus"]
+
+  frontend:
+    build: ./frontend-web
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    profiles: ["full", "frontend"]
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: kid_assistant
+      MYSQL_USER: kid
+      MYSQL_PASSWORD: kid
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ./scripts/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ukid", "-pkid"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    profiles: ["full", "mysql"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["full", "monitoring"]
+    environment:
+      KIDS_METRICS_TOKEN: ${KIDS_METRICS_TOKEN:-dev-metrics-token}
+      KIDS_METRICS_TARGET: backend:8001
+      KIDS_ENV: ${KIDS_ENV:-development}
+      ALERTMANAGER_TARGET: alertmanager:9093
+    volumes:
+      - ./deploy/prometheus/entrypoint.sh:/entrypoint.sh:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+      - alertmanager
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: ["full", "monitoring"]
+    environment:
+      ALERTMANAGER_WEBHOOK_URL: ${ALERTMANAGER_WEBHOOK_URL:-}
+      ALERTMANAGER_SLACK_WEBHOOK: ${ALERTMANAGER_SLACK_WEBHOOK:-}
+      KIDS_ENV: ${KIDS_ENV:-production}
+    volumes:
+      - ./deploy/prometheus/alertmanager-entrypoint.sh:/entrypoint.sh:ro
+      - alertmanagerdata:/alertmanager
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: ["full", "monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  milvusdata:
+  mysqldata:
+  promdata:
+  alertmanagerdata:
+  grafanadata:

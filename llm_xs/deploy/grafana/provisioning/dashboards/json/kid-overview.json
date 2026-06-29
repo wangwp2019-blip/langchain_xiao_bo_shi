@@ -1,0 +1,80 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum(rate(kid_requests_total[5m]))",
+          "legendFormat": "RPS"
+        }
+      ],
+      "title": "请求速率 (RPS)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(kid_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "title": "延迟 P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "sum(increase(kid_requests_total{status=~\"5..\"}[1h]))",
+          "legendFormat": "5xx"
+        }
+      ],
+      "title": "1h 5xx 错误",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum(increase(kid_requests_total{status=\"429\"}[1h]))",
+          "legendFormat": "429"
+        }
+      ],
+      "title": "1h 限流 429",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "kid_audit_write_failures_total",
+          "legendFormat": "audit failures"
+        }
+      ],
+      "title": "MySQL 审计写入失败",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["kid-assistant"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "小博士 · 生产概览",
+  "uid": "kid-assistant-overview",
+  "version": 1
+}

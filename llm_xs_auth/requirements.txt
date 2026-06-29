@@ -1,0 +1,9 @@
+# 小博士 · 认证服务依赖
+# 核心框架
+fastapi-fullauth[sqlmodel]>=0.14
+# SQLModel + 异步 SQLite 驱动（开箱即用）
+sqlmodel>=0.0.22
+aiosqlite>=0.20
+# 运行时
+uvicorn>=0.46
+python-dotenv>=1.2

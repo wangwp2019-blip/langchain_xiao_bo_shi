@@ -1,0 +1,45 @@
+# 环境变量（含 API Key，勿提交）
+.env
+.env.local
+.env.prod
+.env.*.local
+*/.env
+*/.env.prod
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+.conda/
+
+# 运行时数据（可本地重建）
+*.db
+data/memory/
+data/index/
+data/checkpoints.db
+llm_xs/data/
+llm_xs_auth/data/
+
+# 前端 / E2E
+node_modules/
+dist/
+.vite/
+**/node_modules/
+**/dist/
+**/.vite/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 压缩包
+*.zip

@@ -1,0 +1,90 @@
+# 生产环境 Compose overlay（与 docker-compose.yml 叠加使用）
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile full up -d
+#
+# 上线前务必替换所有 change-me / kid 弱口令，并配置 TLS（deploy/nginx.tls.conf.example）。
+
+services:
+  backend:
+    environment:
+      KIDS_ENV: production
+      KIDS_REQUIRE_AUTH: "true"
+      KIDS_API_KEYS: "${KIDS_API_KEYS:?set KIDS_API_KEYS}"
+      # 与认证服务共享，验证 llm_xs_auth 签发的 JWT
+      KIDS_JWT_SECRET: "${KIDS_JWT_SECRET:?set KIDS_JWT_SECRET}"
+      # 每用户每日在线大模型调用上限（0=不限）
+      KIDS_LLM_DAILY_QUOTA_PER_USER: "${KIDS_LLM_DAILY_QUOTA_PER_USER:-200}"
+      KIDS_INGEST_TOKEN: "${KIDS_INGEST_TOKEN:?set KIDS_INGEST_TOKEN}"
+      KIDS_RETENTION_SWEEP_TOKEN: "${KIDS_RETENTION_SWEEP_TOKEN:?set KIDS_RETENTION_SWEEP_TOKEN}"
+      KIDS_CORS_ORIGINS: "${KIDS_CORS_ORIGINS:?set KIDS_CORS_ORIGINS}"
+      KIDS_TRUSTED_PROXY_HOPS: "1"
+      KIDS_RATELIMIT_FAIL_OPEN: "false"
+      KIDS_HEALTH_PUBLIC_DETAIL: "false"
+      KIDS_REQUIRE_PARENT_CONSENT: "true"
+      KIDS_LOG_FORMAT: json
+      KIDS_METRICS_TOKEN: ${KIDS_METRICS_TOKEN:-change-me-metrics}
+      KIDS_SHORT_TERM_BACKEND: postgres
+      KIDS_MEMORY_BACKEND: postgres
+      KIDS_POSTGRES_URL: "postgresql://kid:${POSTGRES_PASSWORD:-kid}@postgres:5432/kid_assistant"
+      KIDS_REDIS_URL: "redis://redis:6379/0"
+      KIDS_QUIZ_SESSION_BACKEND: redis
+      KIDS_MYSQL_URL: "mysql://kid:${MYSQL_PASSWORD:-kid}@mysql:3306/kid_assistant"
+      KIDS_MYSQL_AUTO_INIT_SCHEMA: "true"
+      WEB_CONCURRENCY: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  auth:
+    build:
+      context: ../llm_xs_auth
+      dockerfile: Dockerfile
+    image: kid-assistant-auth
+    profiles: ["auth", "full"]
+    environment:
+      # 与后端共享，签发的 JWT 由 backend 用同一密钥验证
+      AUTH_JWT_SECRET: "${KIDS_JWT_SECRET:?set KIDS_JWT_SECRET}"
+      AUTH_TOKEN_EXPIRE_MINUTES: ${AUTH_TOKEN_EXPIRE_MINUTES:-720}
+      AUTH_CORS_ORIGINS: "${KIDS_CORS_ORIGINS:?set KIDS_CORS_ORIGINS}"
+      LLM_XS_URL: ${LLM_XS_URL:-http://backend:8001}
+      LLM_XS_FRONTEND_URL: "${LLM_XS_FRONTEND_URL:?set LLM_XS_FRONTEND_URL}"
+    volumes:
+      - authdata:/app/data
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+
+  backup-cron:
+    build:
+      context: .
+      dockerfile: scripts/cron/Dockerfile
+    profiles: ["cron", "full"]
+    environment:
+      BACKUP_MODE: network
+      BACKUP_DIR: /app/backups
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: kid
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kid}
+      POSTGRES_DB: kid_assistant
+      MYSQL_HOST: mysql
+      MYSQL_USER: kid
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kid}
+      MYSQL_DATABASE: kid_assistant
+      BACKEND_HOST: backend
+      KIDS_API_PORT: "8001"
+      KIDS_RETENTION_SWEEP_TOKEN: ${KIDS_RETENTION_SWEEP_TOKEN:-}
+    volumes:
+      - ./backups:/app/backups
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  authdata:

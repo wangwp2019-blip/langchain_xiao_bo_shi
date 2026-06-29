@@ -1,0 +1,14 @@
+# 小博士 Playwright E2E（API 冒烟 + 可选 UI）
+{
+  "name": "kid-assistant-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "playwright test",
+    "test:api": "playwright test --project=api",
+    "test:ui": "playwright test --project=ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

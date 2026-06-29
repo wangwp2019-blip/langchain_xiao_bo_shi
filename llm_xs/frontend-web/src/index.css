@@ -1,0 +1,225 @@
+@import "tailwindcss";
+
+/* =========================================================
+   12 套适龄主题：通过 data-theme 切换 CSS 变量
+   每套提供：背景渐变 / 主色 / 副色 / 强调色 / 卡片底色
+   ========================================================= */
+
+:root,
+[data-theme="ocean"] {
+  --c-bg-from: #a8edea;
+  --c-bg-to: #fed6e3;
+  --c-primary: #6a8dff;
+  --c-primary-2: #9d7bff;
+  --c-accent: #34d399;
+  --c-card: #ffffff;
+}
+
+[data-theme="candy"] {
+  --c-bg-from: #fbc2eb;
+  --c-bg-to: #a6c1ee;
+  --c-primary: #f472b6;
+  --c-primary-2: #c084fc;
+  --c-accent: #fb923c;
+  --c-card: #ffffff;
+}
+
+[data-theme="forest"] {
+  --c-bg-from: #d4fc79;
+  --c-bg-to: #96e6a1;
+  --c-primary: #16a34a;
+  --c-primary-2: #0d9488;
+  --c-accent: #f59e0b;
+  --c-card: #ffffff;
+}
+
+[data-theme="sunset"] {
+  --c-bg-from: #ffecd2;
+  --c-bg-to: #fcb69f;
+  --c-primary: #f97316;
+  --c-primary-2: #ef4444;
+  --c-accent: #fbbf24;
+  --c-card: #ffffff;
+}
+
+[data-theme="lavender"] {
+  --c-bg-from: #e0c3fc;
+  --c-bg-to: #8ec5fc;
+  --c-primary: #8b5cf6;
+  --c-primary-2: #6366f1;
+  --c-accent: #ec4899;
+  --c-card: #ffffff;
+}
+
+[data-theme="mint"] {
+  --c-bg-from: #c1fba4;
+  --c-bg-to: #84fab0;
+  --c-primary: #10b981;
+  --c-primary-2: #059669;
+  --c-accent: #f59e0b;
+  --c-card: #ffffff;
+}
+
+[data-theme="peach"] {
+  --c-bg-from: #ffd6a5;
+  --c-bg-to: #ffadad;
+  --c-primary: #fb7185;
+  --c-primary-2: #f43f5e;
+  --c-accent: #fbbf24;
+  --c-card: #ffffff;
+}
+
+[data-theme="sky"] {
+  --c-bg-from: #c2e9fb;
+  --c-bg-to: #a1c4fd;
+  --c-primary: #3b82f6;
+  --c-primary-2: #6366f1;
+  --c-accent: #06b6d4;
+  --c-card: #ffffff;
+}
+
+[data-theme="rose"] {
+  --c-bg-from: #ffe0ec;
+  --c-bg-to: #ffc3a0;
+  --c-primary: #e11d48;
+  --c-primary-2: #be123c;
+  --c-accent: #fb923c;
+  --c-card: #ffffff;
+}
+
+[data-theme="lemon"] {
+  --c-bg-from: #fff3a0;
+  --c-bg-to: #c2e9fb;
+  --c-primary: #eab308;
+  --c-primary-2: #ca8a04;
+  --c-accent: #84cc16;
+  --c-card: #ffffff;
+}
+
+[data-theme="galaxy"] {
+  --c-bg-from: #4b0082;
+  --c-bg-to: #1e1b4b;
+  --c-primary: #7c3aed;
+  --c-primary-2: #4f46e5;
+  --c-accent: #a78bfa;
+  --c-card: #1e1b4b;
+}
+
+[data-theme="aurora"] {
+  --c-bg-from: #00c9ff;
+  --c-bg-to: #92fe9d;
+  --c-primary: #0891b2;
+  --c-primary-2: #7c3aed;
+  --c-accent: #f59e0b;
+  --c-card: #ffffff;
+}
+
+/* =========================================================
+   全局基础样式
+   ========================================================= */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: linear-gradient(135deg, var(--c-bg-from) 0%, var(--c-bg-to) 100%);
+  background-attachment: fixed;
+  transition: background 0.4s ease;
+}
+
+/* galaxy 深色主题：文字用浅色 */
+[data-theme="galaxy"] body {
+  color: #e9d5ff;
+}
+
+/* =========================================================
+   主题色工具类
+   ========================================================= */
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--c-primary), var(--c-primary-2));
+  color: #fff;
+  transition: filter 0.2s ease, transform 0.15s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+.text-primary {
+  color: var(--c-primary);
+}
+.bg-primary {
+  background: var(--c-primary);
+}
+.bg-header {
+  background: linear-gradient(135deg, var(--c-primary), var(--c-primary-2));
+}
+
+/* 玻璃拟态卡片 */
+.glass-card {
+  background: color-mix(in srgb, var(--c-card) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* 色卡选择器 */
+.theme-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.theme-swatch:hover {
+  transform: scale(1.08);
+}
+.theme-swatch.active {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 2px #fff, 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.05);
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--c-primary) 40%, transparent);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-primary);
+}
+
+/* 输入框聚焦动效 */
+input:focus,
+select:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 25%, transparent);
+}
+
+/* 淡入动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fadeInUp 0.3s ease-out;
+}

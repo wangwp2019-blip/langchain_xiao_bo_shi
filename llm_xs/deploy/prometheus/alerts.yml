@@ -1,0 +1,56 @@
+groups:
+  - name: kid-assistant
+    rules:
+      - alert: KidHighErrorRate
+        expr: |
+          sum(rate(kid_requests_total{status=~"5.."}[5m]))
+          / sum(rate(kid_requests_total[5m])) > 0.05
+          and sum(rate(kid_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          service: kid-assistant
+        annotations:
+          summary: "小博士 5xx 错误率 > 5%"
+          description: "过去 5 分钟 5xx 占比过高，请检查 backend 日志。"
+
+      - alert: KidHighRateLimit
+        expr: sum(increase(kid_requests_total{status="429"}[10m])) > 50
+        for: 2m
+        labels:
+          severity: warning
+          service: kid-assistant
+        annotations:
+          summary: "限流 429 突增"
+          description: "10 分钟内 429 超过 50 次，可能存在滥用或配额过低。"
+
+      - alert: KidAuditWriteFailures
+        expr: increase(kid_audit_write_failures_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: kid-assistant
+        annotations:
+          summary: "MySQL 审计写入失败"
+          description: "审计落库失败，请检查 MySQL 连接与表结构。"
+
+      - alert: KidBackendDown
+        expr: up{job="kid-assistant-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: kid-assistant
+        annotations:
+          summary: "Backend metrics 抓取失败"
+          description: "Prometheus 无法抓取 /api/metrics，服务可能宕机。"
+
+      - alert: KidHighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(kid_request_duration_seconds_bucket[5m])) by (le)) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: kid-assistant
+        annotations:
+          summary: "API P95 延迟 > 10s"
+          description: "可能 LLM 阻塞或下游超时。"

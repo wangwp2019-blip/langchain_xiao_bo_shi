@@ -1,0 +1,2 @@
+# Bandit：跳过 Repository TABLE 常量 f-string（B608）与 API 0.0.0.0 绑定（B104）
+skips: ['B104', 'B608']

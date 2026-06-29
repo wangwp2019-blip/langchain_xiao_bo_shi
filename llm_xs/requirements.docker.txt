@@ -1,0 +1,48 @@
+# 容器内生产依赖（默认 LlamaIndex 本地索引 + 离线可跑）
+langchain==1.2.12
+langchain-core==1.2.18
+langchain-community==0.4.1
+langchain-text-splitters==1.1.1
+langchain-openai==1.1.11
+langgraph==1.1.2
+langgraph-checkpoint==4.0.1
+langgraph-checkpoint-sqlite==3.0.1
+fastapi==0.135.1
+uvicorn==0.46.0
+gunicorn==23.0.0
+python-dotenv==1.2.1
+pydantic==2.12.5
+requests==2.32.3
+httpx==0.28.1
+PyJWT==2.10.1
+
+# LlamaIndex 生产级 RAG
+llama-index-core==0.12.30
+llama-index-embeddings-openai==0.3.1
+llama-index-vector-stores-milvus==0.6.0
+
+# 联网搜索（按 .env 启停）
+langchain-tavily==0.2.17
+langchain-google-community==2.0.10
+google-api-python-client==2.160.0
+
+# 可选后端（.profile full / .env 启用）
+redis==5.2.1
+fakeredis==2.36.2
+psycopg[binary,pool]==3.3.3
+langgraph-checkpoint-postgres==3.0.5
+pymysql==1.1.1
+pymilvus==2.6.12
+prometheus-client==0.21.1
+streamlit==1.40.2
+
+# 测试
+pytest==8.3.4
+lupa==2.6
+
+# 可选：OpenTelemetry 全链路追踪（KIDS_OTEL_ENABLED=true 时启用）
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-http==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0

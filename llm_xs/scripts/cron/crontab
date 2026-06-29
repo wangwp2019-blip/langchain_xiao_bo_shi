@@ -1,0 +1,4 @@
+# 每日 03:00 UTC 全量备份（需 --profile cron）
+# 环境变量从 .env.prod 注入
+
+0 3 * * * root cd /app && /bin/sh scripts/cron/backup-all.sh >> /var/log/kid-backup.log 2>&1
