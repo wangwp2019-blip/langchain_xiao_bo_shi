@@ -1,4 +1,6 @@
-# 🌟 langchain1.2_tutorial · 小博士小学生 AI 学习助手（Monorepo）
+# 🌟 langchain_xiao_bo_shi · 小博士小学生 AI 学习助手（Monorepo）
+
+> GitHub 仓库：[wangwp2019-blip/langchain_xiao_bo_shi](https://github.com/wangwp2019-blip/langchain_xiao_bo_shi)
 
 基于 **LangChain 1.2 + LangGraph** 的实战教程仓库，核心是一套可直接上线的**小学生 AI 学习助手「小博士」**：聊天答疑、按年级出题练习、判分、鼓励式反馈，内置儿童安全护栏，并配套**独立 JWT 认证服务**、React 前端、完整的生产部署 / 监控 / 备份 / 灰度方案。
 
@@ -27,7 +29,7 @@
 ## 📁 仓库结构
 
 ```
-langchain1.2_tutorial/
+langchain_xiao_bo_shi/
 ├── llm_xs/             小博士 · AI 学习助手（FastAPI 后端 + React 前端 + LangGraph）
 ├── llm_xs_auth/        用户认证服务（FastAPI + fastapi-fullauth，签发 JWT）
 ├── knowledge.txt       示例知识库文本（可用于 RAG 灌库演示）
