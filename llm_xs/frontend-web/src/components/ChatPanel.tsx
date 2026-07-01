@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { chatStream, fetchPromptSuggestions, type SuggestedPrompt } from "../lib/api";
+import { classifyPhoto, speakText, startVoiceInput, visionUnderstand } from "../lib/learning-api";
 import { t } from "../lib/i18n";
 import type { Lang } from "../lib/types";
+import type { VisionUnderstandResponse } from "../lib/learning-types";
+import { VisionCard } from "./VisionCard";
 
 interface Msg {
   role: "user" | "bot";
@@ -11,33 +14,36 @@ interface Msg {
 interface Props {
   lang: Lang;
   studentId: string;
+  simpleChat?: boolean;
 }
 
 const FALLBACK_PROMPTS: Record<Lang, SuggestedPrompt[]> = {
   zh: [
-    { text: "太阳系有几大行星？", category: "科学" },
+    { text: "RAG 是什么？", category: "知识库" },
     { text: "125 + 38 等于多少？", category: "数学" },
-    { text: "为什么要系安全带？", category: "安全" },
+    { text: "今天几号？星期几？", category: "生活" },
   ],
   en: [
-    { text: "How many planets are in the solar system?", category: "Science" },
+    { text: "What is RAG?", category: "Knowledge" },
     { text: "What is 125 + 38?", category: "Math" },
-    { text: "Why should we wear seat belts?", category: "Safety" },
+    { text: "What is today's date?", category: "Daily" },
   ],
 };
 
-export function ChatPanel({ lang, studentId }: Props) {
+export function ChatPanel({ lang, studentId, simpleChat = false }: Props) {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "bot",
       text:
         lang === "zh"
-          ? '你好呀！我是小博士，可以陪你一起学习。试着问我："太阳系有几大行星？"吧！'
-          : "Hi! I'm Dr. Kid. Try asking: 'How many planets are in the solar system?'",
+          ? "你好！我是小博士，可以聊天并检索知识库。直接提问，我会先查资料再回答。"
+          : "Hi! Ask me anything — I'll search the knowledge base first when helpful.",
     },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [vision, setVision] = useState<VisionUnderstandResponse | null>(null);
   const [suggestions, setSuggestions] = useState<SuggestedPrompt[]>(FALLBACK_PROMPTS[lang]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -61,7 +67,7 @@ export function ChatPanel({ lang, studentId }: Props) {
     });
   };
 
-  const send = async (text?: string) => {
+  const send = async (text?: string, visionId?: string | null) => {
     const question = (text ?? input).trim();
     if (!question || busy) return;
     setInput("");
@@ -69,6 +75,7 @@ export function ChatPanel({ lang, studentId }: Props) {
     setMessages((m) => [...m, { role: "user", text: question }, { role: "bot", text: "" }]);
     scrollToBottom();
 
+    const vid = visionId ?? vision?.vision_id ?? null;
     try {
       await chatStream(question, studentId, studentId, (chunk) => {
         setMessages((m) => {
@@ -80,7 +87,7 @@ export function ChatPanel({ lang, studentId }: Props) {
           return next;
         });
         scrollToBottom();
-      });
+      }, vid);
     } catch (e) {
       setMessages((m) => {
         const next = [...m];
@@ -92,9 +99,83 @@ export function ChatPanel({ lang, studentId }: Props) {
     }
   };
 
+  const toggleVoice = () => {
+    if (listening) {
+      setListening(false);
+      return;
+    }
+    setListening(true);
+    const stop = startVoiceInput((text) => {
+      setInput(text);
+      setListening(false);
+      stop();
+    }, lang);
+    setTimeout(() => {
+      setListening(false);
+      stop();
+    }, 8000);
+  };
+
+  const handlePhoto = () => {
+    const text = window.prompt(
+      lang === "zh"
+        ? "粘贴拍照/OCR 识别的文字（或描述题目）："
+        : "Paste OCR text or describe the homework:",
+    );
+    if (!text?.trim()) return;
+    visionUnderstand(studentId, text.trim(), "homework")
+      .then((v) => {
+        setVision(v);
+        setMessages((m) => [
+          ...m,
+          {
+            role: "bot",
+            text:
+              lang === "zh"
+                ? `📷 识别完成：${v.summary}。你可以点下方卡片提问，或「记入学情」。`
+                : `📷 Scan done: ${v.summary}. Use the card below to ask or save.`,
+          },
+        ]);
+        scrollToBottom();
+      })
+      .catch(() => {});
+  };
+
+  const handleSaveLearning = () => {
+    if (!vision) return;
+    const text = vision.items.map((i) => i.prompt).join("\n");
+    classifyPhoto(studentId, text)
+      .then((r) => {
+        const msg =
+          r.triage === "auto"
+            ? lang === "zh"
+              ? "✅ 已自动归类并记录学情！"
+              : "✅ Saved to learning profile!"
+            : lang === "zh"
+              ? "📋 已提交家长确认队列。"
+              : "📋 Sent to parent confirm queue.";
+        setMessages((m) => [...m, { role: "bot", text: msg }]);
+      })
+      .catch(() => {});
+  };
+
+  const speakLastBot = () => {
+    const last = [...messages].reverse().find((m) => m.role === "bot" && m.text);
+    if (last) speakText(last.text, lang);
+  };
+
   return (
     <div className="flex flex-col h-full">
-      {/* 消息区 */}
+      {vision && !simpleChat && (
+        <VisionCard
+          lang={lang}
+          vision={vision}
+          onAsk={(q) => send(q, vision.vision_id)}
+          onSaveLearning={handleSaveLearning}
+          onDismiss={() => setVision(null)}
+        />
+      )}
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4">
         {messages.map((m, i) => (
           <div
@@ -103,7 +184,6 @@ export function ChatPanel({ lang, studentId }: Props) {
               m.role === "user" ? "flex-row-reverse" : "flex-row"
             }`}
           >
-            {/* 头像 */}
             <div
               className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-lg ${
                 m.role === "user" ? "bg-gray-200" : "bg-header"
@@ -111,7 +191,6 @@ export function ChatPanel({ lang, studentId }: Props) {
             >
               {m.role === "user" ? "🧒" : "🌟"}
             </div>
-            {/* 气泡 */}
             <div
               className={`max-w-[78%] px-4 py-3 rounded-2xl whitespace-pre-wrap break-words text-[15px] leading-relaxed shadow-sm ${
                 m.role === "user"
@@ -125,7 +204,6 @@ export function ChatPanel({ lang, studentId }: Props) {
         ))}
       </div>
 
-      {/* 快捷提问 */}
       {suggestions.length > 0 && (
         <div className="px-4 pb-2 bg-white/50 border-t border-black/5">
           <p className="text-xs text-gray-500 mb-2 pt-2">{t("promptSuggestions", lang)}</p>
@@ -146,8 +224,33 @@ export function ChatPanel({ lang, studentId }: Props) {
         </div>
       )}
 
-      {/* 输入区 */}
-      <div className="p-4 border-t border-black/5 flex gap-2.5 bg-white/50">
+      <div className="p-4 border-t border-black/5 flex gap-2 bg-white/50 items-center">
+        <button
+          type="button"
+          className={`p-2.5 rounded-xl border transition ${listening ? "border-primary bg-primary/10" : "border-gray-200 hover:border-primary/40"}`}
+          onClick={toggleVoice}
+          title={t("voiceInput", lang)}
+        >
+          🎤
+        </button>
+        {!simpleChat && (
+          <button
+            type="button"
+            className="p-2.5 rounded-xl border border-gray-200 hover:border-primary/40 transition"
+            onClick={handlePhoto}
+            title={t("photoInput", lang)}
+          >
+            📷
+          </button>
+        )}
+        <button
+          type="button"
+          className="p-2.5 rounded-xl border border-gray-200 hover:border-primary/40 transition"
+          onClick={speakLastBot}
+          title={t("speak", lang)}
+        >
+          🔊
+        </button>
         <input
           className="flex-1 px-4 py-3 rounded-xl border border-gray-300 bg-white outline-none transition"
           placeholder={t("inputPlaceholder", lang)}
@@ -156,7 +259,7 @@ export function ChatPanel({ lang, studentId }: Props) {
           onKeyDown={(e) => e.key === "Enter" && send()}
         />
         <button
-          className="btn-primary px-7 rounded-xl font-medium disabled:opacity-40"
+          className="btn-primary px-5 rounded-xl font-medium disabled:opacity-40 shrink-0"
           disabled={busy}
           onClick={() => send()}
         >

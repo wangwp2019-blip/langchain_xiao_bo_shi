@@ -240,11 +240,17 @@ export async function chatStream(
   userId: string,
   threadId: string,
   onChunk: (text: string) => void,
+  visionId?: string | null,
 ): Promise<void> {
   const resp = await fetchWithRetry("/api/chat/stream", {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ question, user_id: userId, thread_id: threadId }),
+    body: JSON.stringify({
+      question,
+      user_id: userId,
+      thread_id: threadId,
+      vision_id: visionId || undefined,
+    }),
   });
   if (!resp.body) {
     const data = await resp.json().catch(() => ({}));

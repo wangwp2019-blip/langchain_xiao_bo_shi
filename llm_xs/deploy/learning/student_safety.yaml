@@ -1,0 +1,10 @@
+enabled: true
+redirect_template: "这个我没办法帮你哦～{empathy}我们继续学{subject}吧，要练几题还是看看学习进步？"
+off_topic_patterns:
+  - 代写
+  - 帮我写.*作文
+  - 游戏
+  - 王者荣耀
+  - 谈恋爱
+  - 打架
+  - 骂人

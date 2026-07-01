@@ -114,6 +114,23 @@ class Settings:
     jwt_algorithm: str = _env("KIDS_JWT_ALGORITHM", "HS256")
     cors_origins: str = _env("KIDS_CORS_ORIGINS", "*")  # 逗号分隔来源白名单
     max_body_bytes: int = int(_env("KIDS_MAX_BODY_BYTES", str(64 * 1024)))
+    knowledge_max_upload_bytes: int = int(
+        _env("KIDS_KNOWLEDGE_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))
+    )
+    knowledge_index_async: bool = (
+        _env("KIDS_KNOWLEDGE_INDEX_ASYNC", "true") or "true"
+    ).lower() in ("1", "true", "yes")
+    knowledge_pdf_ocr_max_pages: int = int(
+        _env("KIDS_KNOWLEDGE_PDF_OCR_MAX_PAGES", "15")
+    )
+    # 检索是否按学生档案/请求参数过滤年级、学科（默认关闭，全库检索）
+    knowledge_scope_filter: bool = (
+        _env("KIDS_KNOWLEDGE_SCOPE_FILTER", "false") or "false"
+    ).lower() in ("1", "true", "yes")
+    # 简单聊天模式：无 onboarding/学情/学习域工具，仅聊天 + 知识库检索
+    simple_chat_mode: bool = (
+        _env("KIDS_SIMPLE_CHAT_MODE", "true") or "true"
+    ).lower() in ("1", "true", "yes")
     hsts_max_age: int = int(_env("KIDS_HSTS_MAX_AGE", "0"))  # >0 时下发 Strict-Transport-Security
     metrics_token: str | None = _env("KIDS_METRICS_TOKEN")  # /metrics 抓取令牌
     api_rate_limit_per_min: int = int(_env("KIDS_API_RATE_LIMIT_PER_MIN", "60"))

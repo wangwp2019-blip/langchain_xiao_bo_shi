@@ -189,6 +189,7 @@ KIDS_JWT_SECRET=请改成你自己的-至少32字节-随机串
 | 🔐 鉴权 | API Key + JWT | Bearer / `X-API-Key`；`derive_user_id` 防 IDOR |
 | 👨‍👩‍👧 合规 | 家长同意 | ConsentGate + 导出/删除/留存 sweep |
 | 🎯 提示词 | 可配置 + 个性化 | 文件/追加段 + profile 注入 + 快捷提问 |
+| 📊 Jarvis 学情 | KP/Gap/Attempt/Report | 见 `llm_xs/docs/JARVIS_LEARNING.md`：推题闭环、拍照 inbox、家长周报 |
 | 🔭 可观测 | Metrics + 追踪 | Prometheus 多 worker 聚合；LangSmith；OTEL |
 | 🌍 前端 | React 主 + Streamlit 备 | 12 主题、中英、JWT 登录、出题判分 |
 

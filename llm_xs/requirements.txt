@@ -1,0 +1,2 @@
+# 本地开发依赖（与 requirements.docker.txt 同步）
+-r requirements.docker.txt

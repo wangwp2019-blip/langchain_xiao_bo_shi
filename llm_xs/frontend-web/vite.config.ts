@@ -21,6 +21,7 @@ export default defineConfig({
       "/api": {
         target: backend,
         changeOrigin: true,
+        timeout: 300_000,
       },
     },
   },

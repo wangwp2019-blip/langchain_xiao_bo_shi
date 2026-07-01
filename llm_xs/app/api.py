@@ -101,6 +101,7 @@ class ChatRequest(BaseModel):
     question: str = Field(..., max_length=2000)
     user_id: str = "default-student"
     thread_id: str = "default-thread"
+    vision_id: str | None = Field(None, description="Vision 会话 ID（P7 Agent 编排）")
 
 
 class QuestionRequest(BaseModel):
@@ -193,8 +194,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from .learning import kp_router, learning_router, parent_router, review_router  # noqa: E402
+from .knowledge_library import knowledge_router  # noqa: E402
+
+app.include_router(learning_router)
+app.include_router(parent_router)
+app.include_router(kp_router)
+app.include_router(review_router)
+app.include_router(knowledge_router)
+
 
 # ==================== 中间件 ====================
+
+
+def _request_body_limit(path: str) -> int:
+    """按路由放宽请求体上限（知识库上传允许 PDF 等大文件）。"""
+    if path.startswith("/api/knowledge/upload"):
+        return settings.knowledge_max_upload_bytes
+    return settings.max_body_bytes
 
 
 @app.middleware("http")
@@ -203,22 +220,26 @@ async def production_middleware(request: Request, call_next):
     request_id_var.set(rid)
     start = time.monotonic()
     path = request.url.path
+    body_limit = _request_body_limit(path)
 
     # 请求体大小限制（413）
     if request.method in ("POST", "PUT", "PATCH") and path.startswith("/api/"):
         cl = request.headers.get("content-length")
         if cl and cl.isdigit():
-            if int(cl) > settings.max_body_bytes:
+            if int(cl) > body_limit:
                 resp = JSONResponse(
                     status_code=413,
-                    content={"error": "请求内容太大啦，换短一点好不好？"},
+                    content={
+                        "error": "请求内容太大啦，换短一点好不好？",
+                        "detail": f"最大 {body_limit // (1024 * 1024)}MB",
+                    },
                 )
                 apply_security_headers(resp, path=path, rid=rid)
                 _finish_metrics(resp, rid, path, 413, start)
                 return resp
-        else:
-            # 无 Content-Length 时流式读取硬限制，防绕过
-            body = await read_body_with_limit(request, settings.max_body_bytes)
+        elif not path.startswith("/api/knowledge/upload"):
+            # 无 Content-Length 时流式读取硬限制；multipart 上传交给 Starlette 解析
+            body = await read_body_with_limit(request, body_limit)
             if body is None:
                 resp = JSONResponse(
                     status_code=413,
@@ -297,6 +318,8 @@ def health():
         "auth_enabled": settings.auth_enabled,
         "mysql_configured": settings.mysql_configured,
         "require_parent_consent": settings.require_parent_consent,
+        "simple_chat_mode": settings.simple_chat_mode,
+        "knowledge_scope_filter": settings.knowledge_scope_filter,
         "tracing": {
             "langsmith": settings.enable_tracing,
             "opentelemetry": settings.otel_enabled,
@@ -415,8 +438,9 @@ async def _prepare_chat(
     user_id: str,
     *,
     principal: str = "-",
+    vision_id: str | None = None,
 ) -> tuple[str | None, str]:
-    """聊天前置：同意 + 输入护栏。返回 (early_reply, cleaned_text)。"""
+    """聊天前置：同意 + 输入护栏 + 学习域外拒答。返回 (early_reply, cleaned_text)。"""
     from .privacy import consent_denied_message, has_valid_consent
     from .services.text_utils import clean_text
 
@@ -429,6 +453,23 @@ async def _prepare_chat(
     if not verdict.allowed:
         return verdict.reply or _KID_FRIENDLY_ERROR, ""
 
+    if not settings.simple_chat_mode:
+        from .learning.attempt_service import get_profile
+        from .learning.student_safety import check_user_message
+
+        profile = get_profile(user_id)
+        subject = profile.subject if profile else "数学"
+        safety = check_user_message(text, subject=subject)
+        if not safety.allowed and safety.redirect_message:
+            return safety.redirect_message, ""
+
+    if vision_id:
+        from .learning.vision_service import format_vision_for_prompt
+
+        ctx = format_vision_for_prompt(vision_id)
+        if ctx:
+            text = f"{ctx}\n\n用户问题：{text}"
+
     return None, text
 
 
@@ -438,9 +479,12 @@ async def _answer_with_guardrails_async(
     thread_id: str,
     *,
     principal: str = "-",
+    vision_id: str | None = None,
 ) -> str:
     """异步统一问答流程（一次性返回）。"""
-    early, text = await _prepare_chat(question, user_id, principal=principal)
+    early, text = await _prepare_chat(
+        question, user_id, principal=principal, vision_id=vision_id
+    )
     if early is not None:
         return early
 
@@ -467,9 +511,12 @@ async def _stream_answer_with_guardrails_async(
     thread_id: str,
     *,
     principal: str = "-",
+    vision_id: str | None = None,
 ):
     """流式问答：逐 chunk 产出；护栏拦截时一次性 yield early_reply。"""
-    early, text = await _prepare_chat(question, user_id, principal=principal)
+    early, text = await _prepare_chat(
+        question, user_id, principal=principal, vision_id=vision_id
+    )
     if early is not None:
         yield early
         return
@@ -510,7 +557,9 @@ async def chat(req: ChatRequest, principal: str = Depends(authenticate)):
         return quota_resp
     try:
         mode = "online" if settings.llm_configured else "offline"
-        answer = await _answer_with_guardrails_async(req.question, uid, tid, principal=principal)
+        answer = await _answer_with_guardrails_async(
+            req.question, uid, tid, principal=principal, vision_id=req.vision_id
+        )
         persist_chat_log(
             user_id=uid,
             thread_id=tid,
@@ -543,14 +592,14 @@ async def chat_stream(req: ChatRequest, principal: str = Depends(authenticate)):
         try:
             if settings.llm_configured and settings.chat_stream_native:
                 async for chunk in _stream_answer_with_guardrails_async(
-                    req.question, uid, tid, principal=principal
+                    req.question, uid, tid, principal=principal, vision_id=req.vision_id
                 ):
                     full_parts.append(chunk)
                     yield _sse_format(chunk)
                     await asyncio.sleep(0)
             else:
                 full = await _answer_with_guardrails_async(
-                    req.question, uid, tid, principal=principal
+                    req.question, uid, tid, principal=principal, vision_id=req.vision_id
                 )
                 full_parts.append(full)
                 step = 12

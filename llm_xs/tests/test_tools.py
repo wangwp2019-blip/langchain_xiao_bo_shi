@@ -38,6 +38,15 @@ def test_build_tools_core_names():
     assert len(names) >= 7
 
 
+def test_tavily_registered_when_key_configured(monkeypatch):
+    """TAVILY_API_KEY 存在时 tavily_search 必须注册（docstring 格式曾导致静默失败）。"""
+    from app import config as cfg
+
+    monkeypatch.setattr(cfg.settings, "tavily_api_key", "tvly-test-key")
+    names = [t.name for t in build_tools()]
+    assert "tavily_search" in names
+
+
 def test_search_knowledge_base(keyword_backend):
     build_index()
     ctx = search_knowledge_base.invoke({"query": "太阳系"})

@@ -15,6 +15,8 @@ export interface Health {
   moderation_enabled?: boolean;
   auth_enabled: boolean;
   require_parent_consent?: boolean;
+  simple_chat_mode?: boolean;
+  knowledge_scope_filter?: boolean;
   tracing?: { langsmith: boolean; opentelemetry: boolean };
 }
 export interface ChatResponse {

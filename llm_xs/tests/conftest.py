@@ -33,7 +33,18 @@ def _open_settings() -> None:
     cfg.settings.require_auth = False
     cfg.settings.jwt_secret = None
     cfg.settings.require_parent_consent = False
+    cfg.settings.simple_chat_mode = False
+    cfg.settings.knowledge_scope_filter = False
     _reset_limiter()
+    from app.graph.prompts import clear_prompt_cache
+
+    clear_prompt_cache()
+
+
+@pytest.fixture(autouse=True)
+def _apply_test_settings():
+    _open_settings()
+    yield
 
 
 @pytest.fixture()

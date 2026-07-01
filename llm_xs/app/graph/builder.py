@@ -23,14 +23,14 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from ..long_term_memory import get_store
 from ..short_term_memory import get_checkpointer
-from ..tools import build_tools
+from ..tools import build_agent_tools
 from .nodes import call_model
 from .state import KidsGraphState
 
 
 def build_kids_graph():
     """构建并编译主对话 StateGraph（不缓存，便于测试替换依赖）。"""
-    tools = build_tools()
+    tools = build_agent_tools()
     tool_node = ToolNode(tools)
 
     builder = StateGraph(KidsGraphState)

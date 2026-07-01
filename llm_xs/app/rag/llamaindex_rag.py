@@ -150,20 +150,17 @@ def load_documents() -> list:
 
 
 def configure_embeddings() -> None:
-    """配置 OpenAI 兼容 Embedding（硅基流动 / OpenAI 等）。"""
+    """配置 Embedding：LangChain 适配器，支持 BGE-M3 等 OpenAI 兼容模型。"""
     from llama_index.core import Settings as LISettings
-    from llama_index.embeddings.openai import OpenAIEmbedding
+
+    from .langchain_embedding import LangchainEmbeddingAdapter
 
     if not settings.embedding_configured:
         raise RuntimeError(
             "LlamaIndex RAG 需要 Embedding API。"
             "请配置 KIDS_EMBED_* 或 SILICONFLOW_* 环境变量。"
         )
-    LISettings.embed_model = OpenAIEmbedding(
-        model=settings.embed_model,
-        api_key=settings.embed_api_key,
-        api_base=settings.embed_base_url,
-    )
+    LISettings.embed_model = LangchainEmbeddingAdapter()
 
 
 def _milvus_collection_exists() -> bool:
@@ -407,14 +404,25 @@ def check_rag_ready() -> dict[str, Any]:
     return result
 
 
-def retrieve(query: str, top_k: int | None = None) -> list[dict[str, Any]]:
-    """VectorStoreIndex Retriever 检索，返回统一 hit 结构。"""
+def retrieve(
+    query: str,
+    top_k: int | None = None,
+    *,
+    grade: int | None = None,
+    subject: str | None = None,
+    _allow_fallback: bool = True,
+) -> list[dict[str, Any]]:
+    """VectorStoreIndex Retriever 检索，返回统一 hit 结构；可按年级/学科过滤。"""
     if not query.strip():
         return []
+    if not settings.knowledge_scope_filter:
+        grade = None
+        subject = None
     k = top_k or settings.retrieve_top_k
+    fetch_k = k * 3 if (grade is not None or subject) else k
     try:
         index = _get_index()
-        retriever = index.as_retriever(similarity_top_k=k)
+        retriever = index.as_retriever(similarity_top_k=fetch_k)
         nodes = retriever.retrieve(query)
     except Exception as exc:
         logger.warning("LlamaIndex 检索失败: %s", exc)
@@ -422,17 +430,226 @@ def retrieve(query: str, top_k: int | None = None) -> list[dict[str, Any]]:
 
     hits: list[dict[str, Any]] = []
     for node in nodes:
+        meta = node.metadata or {}
+        hit_grade = meta.get("grade")
+        hit_subject = meta.get("subject")
+        if grade is not None and hit_grade not in (None, "", 0, "0", "all", grade, str(grade)):
+            continue
+        if subject and hit_subject and hit_subject != subject:
+            continue
         hits.append(
             {
                 "text": node.get_content(),
                 "score": float(node.score or 0.0),
-                "source": (node.metadata or {}).get("source", ""),
-                "chunk_id": (node.metadata or {}).get("chunk_id"),
+                "source": meta.get("source", meta.get("title", "")),
+                "chunk_id": meta.get("chunk_id"),
+                "doc_id": meta.get("doc_id"),
+                "grade": hit_grade if hit_grade not in ("all", "") else None,
+                "subject": hit_subject,
+                "upload_type": meta.get("upload_type"),
             }
         )
+        if len(hits) >= k:
+            break
+
+    if not hits and _allow_fallback and (grade is not None or subject):
+        logger.info("年级/学科过滤无命中，放宽范围重试 query=%r", query[:50])
+        return retrieve(query, top_k=top_k, _allow_fallback=False)
     return hits
 
 
 def verify_retrieval(query: str = "太阳系", top_k: int = 2) -> list[dict[str, Any]]:
     """灌库后验证检索（run_ingest --verify 用）。"""
     return retrieve(query, top_k=top_k)
+
+
+def _split_text_to_documents(
+    text: str,
+    *,
+    doc_id: str,
+    title: str,
+    grade: int | None = None,
+    subject: str | None = None,
+    upload_type: str | None = None,
+    filename: str | None = None,
+    source_label: str | None = None,
+) -> list:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+    from llama_index.core import Document
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=settings.chunk_size,
+        chunk_overlap=settings.chunk_overlap,
+        separators=_SEPARATORS,
+    )
+    chunks = splitter.split_text(text)
+    chunks = [c for c in chunks if not _is_separator_only(c)]
+    label = source_label or title or doc_id
+    docs = []
+    for i, chunk in enumerate(chunks):
+        meta = {
+            "source": label,
+            "title": title,
+            "chunk_id": i,
+            "doc_id": doc_id,
+            "grade": grade if grade is not None else "all",
+            "subject": subject or "",
+            "upload_type": upload_type or "txt",
+            "filename": filename or "",
+        }
+        docs.append(Document(text=chunk, metadata=meta))
+    return docs
+
+
+def load_base_documents() -> list:
+    """内置 kids_knowledge.txt。"""
+    if not settings.knowledge_file.exists():
+        return []
+    text = settings.knowledge_file.read_text(encoding="utf-8")
+    return _split_text_to_documents(
+        text,
+        doc_id="builtin-knowledge",
+        title="内置百科",
+        grade=None,
+        subject="",
+        upload_type="txt",
+        filename=settings.knowledge_file.name,
+        source_label=settings.knowledge_file.name,
+    )
+
+
+def load_library_catalog_documents() -> list:
+    """从 knowledge_library 目录加载全部 extracted.txt。"""
+    from ..knowledge_library.service import list_documents
+
+    docs: list = []
+    for rec in list_documents():
+        from ..knowledge_library.service import _doc_dir
+
+        extracted = _doc_dir(rec.doc_id) / "extracted.txt"
+        if not extracted.is_file():
+            continue
+        text = extracted.read_text(encoding="utf-8")
+        docs.extend(
+            _split_text_to_documents(
+                text,
+                doc_id=rec.doc_id,
+                title=rec.title,
+                grade=rec.grade,
+                subject=rec.subject,
+                upload_type=rec.upload_type,
+                filename=rec.filename,
+            )
+        )
+    return docs
+
+
+def load_all_source_documents() -> list:
+    base = load_base_documents()
+    lib = load_library_catalog_documents()
+    return base + lib
+
+
+def rebuild_all_sources(*, force: bool = True) -> int:
+    """全量灌库：内置百科 + 上传资料库。"""
+    global _INDEX
+    configure_embeddings()
+    docs = load_all_source_documents()
+    if not docs:
+        raise FileNotFoundError("没有可灌库的内容")
+
+    with _INDEX_LOCK:
+        _INDEX = None
+    _get_index.cache_clear()
+
+    backend = settings.vector_backend.lower()
+    if backend == "milvus":
+        index = _build_milvus_index(docs, force=force)
+        count = _milvus_row_count() or len(docs)
+    elif backend == "memory":
+        index = _build_memory_index(docs)
+        count = len(docs)
+    else:
+        index = _build_local_index(docs, force=force)
+        count = len(index.docstore.docs)
+
+    with _INDEX_LOCK:
+        _INDEX = index
+    _write_manifest(count)
+    return count
+
+
+def index_library_text(
+    text: str,
+    *,
+    doc_id: str,
+    title: str,
+    grade: int,
+    subject: str,
+    upload_type: str,
+    filename: str,
+) -> int:
+    """写入单份上传资料：Milvus 增量 insert；local/memory 全量重建。"""
+    docs = _split_text_to_documents(
+        text,
+        doc_id=doc_id,
+        title=title,
+        grade=grade,
+        subject=subject,
+        upload_type=upload_type,
+        filename=filename,
+    )
+    if not docs:
+        return 0
+
+    configure_embeddings()
+    backend = settings.vector_backend.lower()
+
+    if backend == "milvus":
+        _milvus_delete_doc(doc_id)
+        with _INDEX_LOCK:
+            global _INDEX
+            if _INDEX is None and _index_is_populated():
+                _INDEX = _attach_existing_index(backend)
+            if _INDEX is None or not _milvus_collection_exists():
+                rebuild_all_sources(force=False)
+                return len(docs)
+            for doc in docs:
+                _INDEX.insert(doc)
+        clear_index_cache()
+        count = _milvus_row_count() or index_count()
+        _write_manifest(count)
+        return len(docs)
+
+    rebuild_all_sources(force=True)
+    return len(docs)
+
+
+def _milvus_delete_doc(doc_id: str) -> None:
+    try:
+        from pymilvus import MilvusClient
+
+        client = MilvusClient(uri=settings.milvus_uri)
+        if client.has_collection(settings.milvus_collection):
+            client.delete(
+                collection_name=settings.milvus_collection,
+                filter=f'doc_id == "{doc_id}"',
+            )
+    except Exception as exc:
+        logger.warning("Milvus 删除 doc_id=%s 失败: %s", doc_id, exc)
+
+
+def remove_library_doc(doc_id: str) -> None:
+    """删除某 doc_id 的向量。"""
+    backend = settings.vector_backend.lower()
+    if backend == "milvus":
+        _milvus_delete_doc(doc_id)
+        clear_index_cache()
+        return
+
+    clear_index_cache()
+    try:
+        rebuild_all_sources(force=True)
+    except Exception:
+        pass

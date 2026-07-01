@@ -21,7 +21,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from ..knowledge import format_context, retrieve
 from ..models import get_llm
 from ..resilience import invoke_with_retry
-from ..tools import build_tools
+from ..tools import build_agent_tools
+from ..config import settings
 from .prompts import (
     STUDY_CARD_SYSTEM_PROMPT,
     build_kids_system_prompt,
@@ -39,12 +40,22 @@ def _ensure_system_message(
     if messages and isinstance(messages[0], SystemMessage):
         return messages
     ctx = load_prompt_context(user_id)
-    return [SystemMessage(content=build_kids_system_prompt(ctx)), *messages]
+    content = build_kids_system_prompt(ctx)
+    if user_id and not settings.simple_chat_mode:
+        from ..learning.attempt_service import get_profile
+        from ..learning.behavior import format_behavior_prompt
+        from ..learning.context_service import format_context_for_prompt
+
+        profile = get_profile(user_id)
+        grade_level = profile.grade_level if profile else None
+        content += "\n\n" + format_behavior_prompt(grade_level)
+        content += "\n\n" + format_context_for_prompt(user_id)
+    return [SystemMessage(content=content), *messages]
 
 
 def call_model(state: KidsGraphState) -> dict:
     """Agent 节点：调用 LLM，可能返回带 tool_calls 的 AIMessage。"""
-    tools = build_tools()
+    tools = build_agent_tools()
     llm = get_llm().bind_tools(tools)
     messages = _ensure_system_message(list(state["messages"]), state.get("user_id"))
     response = invoke_with_retry(lambda: llm.invoke(messages))

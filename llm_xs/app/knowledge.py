@@ -11,6 +11,16 @@ from typing import Any
 from .config import settings
 
 
+def apply_retrieval_scope(
+    grade: int | None,
+    subject: str | None,
+) -> tuple[int | None, str | None]:
+    """年级/学科过滤开关：默认关闭，全库按相似度检索。"""
+    if not settings.knowledge_scope_filter:
+        return None, None
+    return grade, subject
+
+
 def _use_llamaindex() -> bool:
     from .rag.llamaindex_rag import is_active
 
@@ -83,13 +93,20 @@ def get_index_count() -> int:
         return 0
 
 
-def retrieve(query: str, top_k: int | None = None) -> list[dict[str, Any]]:
+def retrieve(
+    query: str,
+    top_k: int | None = None,
+    *,
+    grade: int | None = None,
+    subject: str | None = None,
+) -> list[dict[str, Any]]:
     """在知识库中检索与 query 最相关的若干片段。"""
     k = top_k or settings.retrieve_top_k
+    grade, subject = apply_retrieval_scope(grade, subject)
     if _use_llamaindex():
         from .rag.llamaindex_rag import retrieve as li_retrieve
 
-        return li_retrieve(query, top_k=k)
+        return li_retrieve(query, top_k=k, grade=grade, subject=subject)
     from .vector_store import get_vector_store
 
     return get_vector_store().search_by_text(query, k)

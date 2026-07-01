@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import ast
+import contextvars
 import operator
 from datetime import datetime
 
@@ -19,6 +20,36 @@ from .config import settings
 from .knowledge import format_context, retrieve
 from .memory_admin import list_memories, remember_fact, sweep_expired
 from .safety import sanitize_output
+
+_rag_student_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "rag_student_id", default=None
+)
+
+
+def bind_rag_student(user_id: str | None) -> contextvars.Token[str | None]:
+    """Agent 调用前绑定学生 ID，供 search_knowledge_base 按年级/学科过滤。"""
+    return _rag_student_id.set(user_id)
+
+
+def unbind_rag_student(token: contextvars.Token[str | None]) -> None:
+    _rag_student_id.reset(token)
+
+
+def _rag_scope() -> tuple[int | None, str | None]:
+    from .knowledge import apply_retrieval_scope
+
+    sid = _rag_student_id.get()
+    if not sid:
+        return apply_retrieval_scope(None, None)
+    try:
+        from .learning.attempt_service import get_profile
+
+        profile = get_profile(sid)
+        if profile:
+            return apply_retrieval_scope(profile.grade_level, profile.subject)
+    except Exception:  # noqa: BLE001
+        pass
+    return apply_retrieval_scope(None, None)
 
 # ==================== 1. 知识库检索（RAG）====================
 
@@ -33,7 +64,10 @@ def search_knowledge_base(query: str) -> str:
     Args:
         query: 要在知识库中检索的问题或关键词
     """
-    hits = retrieve(query)
+    grade_level, subject = _rag_scope()
+    hits = retrieve(query, grade=grade_level, subject=subject)
+    if not hits:
+        return "（知识库中没有找到相关内容，可换关键词或确认资料已 indexed）"
     return format_context(hits)
 
 
@@ -202,10 +236,16 @@ def _build_tavily_search():
 
         @tool(parse_docstring=True)
         def tavily_search(query: str) -> str:
-            """使用 Tavily 搜索最新公开信息（结果经儿童安全净化）。"""
+            """使用 Tavily 搜索最新公开信息（结果经儿童安全净化）。
+
+            当知识库没有答案、或需要最新新闻/事件时使用。
+
+            Args:
+                query: 搜索关键词
+            """
             return _sanitize_tool_text(base.invoke({"query": query}))
 
-        tavily_search.name = "tavily_search"
+        tavily_search.name = "tavily_search"    
         return tavily_search
     except Exception:  # noqa: BLE001
         return None
@@ -240,16 +280,19 @@ def _build_google_search():
 
 
 def build_tools() -> list:
-    """组装 Agent 工具列表（联网搜索按配置自动启停，可并存）。"""
-    tools = [
-        search_knowledge_base,
-        calculator,
-        get_today_info,
-        save_student_profile,
-        get_student_profile,
-        save_memory,
-        recall_memories,
-    ]
+    """组装 Agent 基础工具（简单模式仅聊天 + 知识库 + 计算/日期/联网）。"""
+    if settings.simple_chat_mode:
+        tools = [search_knowledge_base, calculator, get_today_info]
+    else:
+        tools = [
+            search_knowledge_base,
+            calculator,
+            get_today_info,
+            save_student_profile,
+            get_student_profile,
+            save_memory,
+            recall_memories,
+        ]
     tavily = _build_tavily_search()
     if tavily is not None:
         tools.append(tavily)
@@ -257,3 +300,13 @@ def build_tools() -> list:
     if google is not None:
         tools.append(google)
     return tools
+
+
+def build_agent_tools() -> list:
+    """主对话图工具：简单模式不含学习域工具。"""
+    tools = build_tools()
+    if settings.simple_chat_mode:
+        return tools
+    from .learning.learning_tools import build_learning_tools
+
+    return tools + build_learning_tools()

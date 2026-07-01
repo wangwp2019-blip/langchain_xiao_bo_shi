@@ -17,10 +17,11 @@ from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 
 from .graph import get_kids_graph, get_study_card_graph
 from .schemas import StudyCard
+from .tools import bind_rag_student, unbind_rag_student
 
 
-def _graph_config(thread_id: str) -> dict:
-    return {"configurable": {"thread_id": thread_id}}
+def _graph_config(thread_id: str, user_id: str = "default-student") -> dict:
+    return {"configurable": {"thread_id": thread_id, "user_id": user_id}}
 
 
 def ask(
@@ -30,10 +31,14 @@ def ask(
 ) -> str:
     """一次性问答，返回完整答案文本。"""
     graph = get_kids_graph()
-    result = graph.invoke(
-        {"messages": [HumanMessage(content=question)], "user_id": user_id},
-        config=_graph_config(thread_id),
-    )
+    token = bind_rag_student(user_id)
+    try:
+        result = graph.invoke(
+            {"messages": [HumanMessage(content=question)], "user_id": user_id},
+            config=_graph_config(thread_id, user_id),
+        )
+    finally:
+        unbind_rag_student(token)
     return result["messages"][-1].content
 
 
@@ -44,10 +49,14 @@ async def ask_async(
 ) -> str:
     """异步一次性问答（API 主路径，graph.ainvoke 不阻塞 worker 线程）。"""
     graph = get_kids_graph()
-    result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=question)], "user_id": user_id},
-        config=_graph_config(thread_id),
-    )
+    token = bind_rag_student(user_id)
+    try:
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content=question)], "user_id": user_id},
+            config=_graph_config(thread_id, user_id),
+        )
+    finally:
+        unbind_rag_student(token)
     return result["messages"][-1].content
 
 
@@ -58,17 +67,21 @@ def stream_answer(
 ) -> Iterator[str]:
     """流式问答，逐步产出 AI 回答的文本增量。"""
     graph = get_kids_graph()
-    for chunk in graph.stream(
-        {"messages": [HumanMessage(content=question)], "user_id": user_id},
-        config=_graph_config(thread_id),
-        stream_mode="messages",
-    ):
-        message = chunk[0]
-        if isinstance(message, ToolMessage):
-            continue
-        content = getattr(message, "content", "")
-        if content and isinstance(message, AIMessageChunk):
-            yield content
+    token = bind_rag_student(user_id)
+    try:
+        for chunk in graph.stream(
+            {"messages": [HumanMessage(content=question)], "user_id": user_id},
+            config=_graph_config(thread_id, user_id),
+            stream_mode="messages",
+        ):
+            message = chunk[0]
+            if isinstance(message, ToolMessage):
+                continue
+            content = getattr(message, "content", "")
+            if content and isinstance(message, AIMessageChunk):
+                yield content
+    finally:
+        unbind_rag_student(token)
 
 
 async def stream_answer_async(
@@ -78,17 +91,21 @@ async def stream_answer_async(
 ) -> AsyncIterator[str]:
     """异步流式问答。"""
     graph = get_kids_graph()
-    async for chunk in graph.astream(
-        {"messages": [HumanMessage(content=question)], "user_id": user_id},
-        config=_graph_config(thread_id),
-        stream_mode="messages",
-    ):
-        message = chunk[0]
-        if isinstance(message, ToolMessage):
-            continue
-        content = getattr(message, "content", "")
-        if content and isinstance(message, AIMessageChunk):
-            yield content
+    token = bind_rag_student(user_id)
+    try:
+        async for chunk in graph.astream(
+            {"messages": [HumanMessage(content=question)], "user_id": user_id},
+            config=_graph_config(thread_id, user_id),
+            stream_mode="messages",
+        ):
+            message = chunk[0]
+            if isinstance(message, ToolMessage):
+                continue
+            content = getattr(message, "content", "")
+            if content and isinstance(message, AIMessageChunk):
+                yield content
+    finally:
+        unbind_rag_student(token)
 
 
 def generate_study_card(question: str) -> StudyCard:
