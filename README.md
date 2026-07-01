@@ -2,7 +2,7 @@
 
 > GitHub 仓库：[wangwp2019-blip/langchain_xiao_bo_shi](https://github.com/wangwp2019-blip/langchain_xiao_bo_shi)
 
-基于 **LangChain 1.2 + LangGraph** 的实战教程仓库，核心是一套可直接上线的**小学生 AI 学习助手「小博士」**：聊天答疑、按年级出题练习、判分、鼓励式反馈，内置儿童安全护栏，并配套**独立 JWT 认证服务**、React 前端、完整的生产部署 / 监控 / 备份 / 灰度方案。
+基于 **LangChain 1.2 + LangGraph** 的实战教程仓库，核心是一套可直接上线的**小学生 AI 学习助手「小博士」**：聊天答疑（默认**简单聊天 + 知识库 RAG**）、资料库上传检索、按年级出题练习、Jarvis 学情闭环，内置儿童安全护栏，并配套**独立 JWT 认证服务**、React 前端、完整的生产部署 / 监控 / 备份 / 灰度方案。
 
 > **不填任何 Key 也能跑**：默认离线降级模式，问答（含算式直算）、出题、判分、鼓励、安全过滤都可用；  
 > 配好 `.env` 即自动启用真实大模型，**代码零改动**；在线异常时自动降级，绝不把报错丢给孩子。
@@ -30,16 +30,20 @@
 
 ```
 langchain_xiao_bo_shi/
-├── llm_xs/             小博士 · AI 学习助手（FastAPI 后端 + React 前端 + LangGraph）
-├── llm_xs_auth/        用户认证服务（FastAPI + fastapi-fullauth，签发 JWT）
-├── knowledge.txt       示例知识库文本（可用于 RAG 灌库演示）
-├── requirements.txt    合并后的 Python 依赖（含 llm_xs 全部依赖）
-├── .env                共享密钥与模型配置（LLM / Embedding / JWT 等，勿提交）
-└── README.md           本文件（仓库总览）
+├── llm_xs/                 小博士 · AI 学习助手（FastAPI 后端 + React 前端 + LangGraph）
+│   ├── app/learning/       Jarvis 学习域（KP/Gap/Attempt/家长报告）
+│   ├── app/knowledge_library/  资料库上传、解析、向量索引与检索
+│   └── data/kids_knowledge.txt  内置小学生百科（RAG 默认灌库）
+├── llm_xs_auth/            用户认证服务（FastAPI + fastapi-fullauth，签发 JWT）
+├── docs/                   产品/学习域设计文档 + KP 示例（*.kp.md）
+├── 学生Jarvis-v2/          v2 场景域、验证切片与架构文档
+├── knowledge.txt           示例知识库文本（可用于 RAG 灌库演示）
+├── requirements.txt        教程 + llm_xs 合并 Python 依赖
+├── .env                    共享密钥与模型配置（LLM / Embedding / JWT 等，勿提交）
+└── README.md               本文件（仓库总览）
 ```
 
-> 详细的子项目说明见各自 README：[`llm_xs/README.md`](llm_xs/README.md) ·
-> [`llm_xs/frontend-web/README.md`](llm_xs/frontend-web/README.md)。
+> 详细的子项目说明见 [`llm_xs/frontend-web/README.md`](llm_xs/frontend-web/README.md) · [`llm_xs/docs/JARVIS_LEARNING.md`](llm_xs/docs/JARVIS_LEARNING.md) · [`docs/项目架构与配置说明.md`](docs/项目架构与配置说明.md)。
 
 ---
 
@@ -47,7 +51,7 @@ langchain_xiao_bo_shi/
 
 | 子项目 | 角色 | 技术栈 | 默认端口 |
 | --- | --- | --- | --- |
-| **llm_xs** | 大模型后端（问答/出题/判分/RAG/记忆） | FastAPI · LangGraph · LlamaIndex | 8001 |
+| **llm_xs** | 大模型后端（问答/出题/判分/RAG/记忆/学习域/资料库） | FastAPI · LangGraph · LlamaIndex | 8001 |
 | **llm_xs/frontend-web** | React 主前端（SSE 流式、出题、登录守卫） | React 19 · Vite · Tailwind v4 | 5173 |
 | **llm_xs/app/frontend** | Streamlit 备用前端（零 Node） | Streamlit | 8501 |
 | **llm_xs_auth** | 注册/登录，签发 JWT 供后端鉴权 | FastAPI · fastapi-fullauth · SQLite | 8002 |
@@ -94,7 +98,8 @@ flowchart LR
 ```bash
 cd langchain1.2_tutorial
 conda create -n kid312 python=3.12 -y && conda activate kid312
-pip install -r requirements.txt           # 合并依赖（含 llm_xs 全部）
+pip install -r llm_xs/requirements.txt       # 小博士后端（含 LlamaIndex / PDF 解析）
+# 或 pip install -r requirements.txt         # 教程全量依赖
 cp .env.example .env 2>$null || true       # 若无示例，直接编辑 .env（见下文）
 ```
 
@@ -110,9 +115,11 @@ python run.py                              # http://localhost:8002
 
 ```bash
 cd llm_xs
-python run_ingest.py                       # 可选：建知识库（需 Embedding Key）
+python run_ingest.py                       # 可选：重建向量索引（内置百科 + 已上传资料）
 python run_api.py                          # http://localhost:8001
 ```
+
+> **默认简单聊天模式**：无需 Onboarding 即可聊天；Agent 会调用 `search_knowledge_base` 检索资料库。家长端 **📚 知识库** Tab 可上传 PDF/txt/docx/图片（单文件最大 100MB）。
 
 ### 3. 启动 React 前端
 
@@ -155,6 +162,12 @@ OPENROUTER_API_KEY=sk-or-v1-xxx
 # ---- Embedding（向量 RAG，硅基流动 BGE-M3）----
 SILICONFLOW_API_KEY=sk-xxx
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
+KIDS_EMBED_MODEL=Pro/BAAI/bge-m3
+
+# ---- 知识库 / 聊天模式（可选，以下为默认）----
+KIDS_SIMPLE_CHAT_MODE=true              # 简单聊天：无 onboarding/学情工具，优先查资料库
+KIDS_KNOWLEDGE_SCOPE_FILTER=false       # 全库检索，不按年级/学科过滤
+KIDS_KNOWLEDGE_MAX_UPLOAD_BYTES=104857600
 
 # ---- 联网搜索（可选）----
 TAVILY_API_KEY=tvly-xxx
@@ -169,7 +182,7 @@ KIDS_JWT_SECRET=请改成你自己的-至少32字节-随机串
 ```
 
 > ⚠️ 当前仓库 `.env` 内含示例明文密钥，**上线前务必替换并从版本库移除**。  
-> 小博士后端的全部 `KIDS_*` 变量说明见 [`llm_xs/README.md`](llm_xs/README.md#-启用真实大模型与生产后端代码零改动)。
+> 小博士后端的 `KIDS_*` 变量详见 [`docs/项目架构与配置说明.md`](docs/项目架构与配置说明.md) 与 [`llm_xs/docs/JARVIS_LEARNING.md`](llm_xs/docs/JARVIS_LEARNING.md)。
 
 ---
 
@@ -177,21 +190,22 @@ KIDS_JWT_SECRET=请改成你自己的-至少32字节-随机串
 
 | 模块 | 功能 | 说明 |
 | --- | --- | --- |
-| 💬 问答 | 聊天 / SSE 流式 | 在线 LangGraph ReAct + 工具；离线算式直算 |
+| 💬 问答 | 聊天 / SSE 流式 | **默认简单聊天模式**：ReAct + `search_knowledge_base`；可关 `KIDS_SIMPLE_CHAT_MODE` 启用完整学情工具 |
+| 📚 资料库 | 上传 + RAG | 家长端管理；支持 txt/pdf/docx/图片；LlamaIndex 增量索引；`POST /api/knowledge/search` |
 | 📇 学习卡片 | `POST /api/study-card` | RAG + LLM 输出结构化 JSON（知识点/例子/鼓励） |
 | 📝 出题练习 | 年级 + 学科 + 题数 | 数学按年级生成，语文/英语/科学题库；`seed` 可复现 |
 | ✅ 判分 | `session_id` 闭环 | 答案存服务端，响应不含答案，防作弊 |
 | 🎉 鼓励 | 逐题 + 总结 | 答对表扬、答错温和引导、留空友好提示 |
 | 🛡️ 安全 | 三级护栏 | 正常/引导/拦截 + 输出净化 + 可选 Moderation |
 | 🧠 记忆 | 短 + 长 | thread 多轮 + user 跨会话；去重/容量/TTL |
-| 🌐 RAG | LlamaIndex + Milvus | local / milvus / keyword 三后端 |
+| 🌐 RAG | LlamaIndex + Milvus | local / milvus / keyword；内置 `kids_knowledge.txt` + 上传资料合并索引 |
 | 🔍 联网 | Tavily + Google | 按 `.env` 启停，输出经儿童安全净化 |
 | 🔐 鉴权 | API Key + JWT | Bearer / `X-API-Key`；`derive_user_id` 防 IDOR |
 | 👨‍👩‍👧 合规 | 家长同意 | ConsentGate + 导出/删除/留存 sweep |
 | 🎯 提示词 | 可配置 + 个性化 | 文件/追加段 + profile 注入 + 快捷提问 |
-| 📊 Jarvis 学情 | KP/Gap/Attempt/Report | 见 `llm_xs/docs/JARVIS_LEARNING.md`：推题闭环、拍照 inbox、家长周报 |
+| 📊 Jarvis 学情 | KP/Gap/Attempt/Report | 见 [`llm_xs/docs/JARVIS_LEARNING.md`](llm_xs/docs/JARVIS_LEARNING.md)；`KIDS_SIMPLE_CHAT_MODE=false` 时启用完整闭环 |
 | 🔭 可观测 | Metrics + 追踪 | Prometheus 多 worker 聚合；LangSmith；OTEL |
-| 🌍 前端 | React 主 + Streamlit 备 | 12 主题、中英、JWT 登录、出题判分 |
+| 🌍 前端 | React 主 + Streamlit 备 | 简单模式仅聊天 Tab；家长模式含 📚 知识库 / 学情 / 周报 |
 
 ### LangGraph 主对话图
 
@@ -214,7 +228,13 @@ START → call_model → tools_condition?
 | --- | --- | --- |
 | GET | `/api/health` · `/api/ready` | 健康检查 / 就绪探针 |
 | GET | `/api/metrics` | Prometheus 指标（Token / 本机） |
-| POST | `/api/chat` · `/api/chat/stream` | 一次性 / SSE 流式问答 |
+| POST | `/api/chat` · `/api/chat/stream` | 一次性 / SSE 流式问答（Agent 可调 `search_knowledge_base`） |
+| GET | `/api/knowledge/status` | 资料库 / 向量索引状态 |
+| POST | `/api/knowledge/upload` | 上传资料（multipart，最大 100MB） |
+| POST | `/api/knowledge/search` | 向量检索预览（`query` + `top_k`） |
+| POST | `/api/knowledge/rebuild` | 全量重建索引（内置百科 + 全部资料） |
+| GET | `/api/knowledge/documents` | 资料列表（可按年级/学科筛选） |
+| * | `/api/learning/*` | Jarvis 学习域（onboarding/attempt/gap/plan 等，见 JARVIS_LEARNING.md） |
 | POST | `/api/study-card` | 结构化学习卡片 |
 | GET | `/api/prompts/suggestions` | 快捷提问（`?grade=&lang=`） |
 | POST | `/api/quiz` · `/api/grade` | 出题（返回 `session_id`）/ 判分 |
@@ -301,7 +321,9 @@ docker compose --profile cron up -d backup-cron
 
 ```bash
 cd llm_xs
-python -m pytest tests/ -m "not integration" -v    # CI 同款，140+ 用例
+python -m pytest tests/ -m "not integration" -v    # CI 同款
+python -m pytest tests/test_knowledge_library.py tests/test_learning.py -v
+python tests/smoke_learning.py                     # 学习域 API 冒烟
 python -m pytest tests/ -m integration -v          # 需真实 LLM Key
 python run_all_tests.py                            # S0–S7 分阶段自测
 
@@ -332,8 +354,9 @@ cd e2e && npm ci && npx playwright install chromium && npm run test:api
 
 ## ❓ 常见问题
 
-- **没填 Key 能用吗？** 能。离线模式下问答（含算式）、出题、判分、鼓励、安全过滤都可用。
-- **依赖装哪？** 仓库根 `pip install -r requirements.txt`（已含 llm_xs）；容器见 `llm_xs/requirements.docker.txt`；认证服务见 `llm_xs_auth/requirements.txt`。
+- **没填 Key 能用吗？** 能。离线模式下问答（含算式）、出题、判分、鼓励、安全过滤都可用；向量 RAG 需配置 Embedding Key。
+- **聊天怎么查知识库？** 默认 `KIDS_SIMPLE_CHAT_MODE=true`，Agent 会调用 `search_knowledge_base`；家长端 📚 知识库可上传 PDF 并检索预览。
+- **依赖装哪？** 推荐 `pip install -r llm_xs/requirements.txt`；教程全量见根目录 `requirements.txt`；容器见 `llm_xs/requirements.docker.txt`。
 - **一定要起认证服务吗？** 不需要。不配 `KIDS_JWT_SECRET` / 不开 `KIDS_REQUIRE_AUTH` 即开放模式，直接用后端。
 - **JWT 不生效？** 确认 `llm_xs_auth` 的 `AUTH_JWT_SECRET` 与 `llm_xs` 的 `KIDS_JWT_SECRET` 一致，且后端已安装 `PyJWT`。
 - **端口冲突？** 后端 `KIDS_API_PORT=8011`、认证 `AUTH_API_PORT=8012` 后重启。

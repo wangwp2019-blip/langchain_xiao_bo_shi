@@ -1,20 +1,31 @@
 # 小博士 React 前端（frontend-web）
 
-React 19 + Vite + TypeScript + Tailwind CSS v4 的小学生 AI 学习助手前端，前后端分离，通过 `/api` 调用 [FastAPI 后端](../)。
+React 19 + Vite + TypeScript + Tailwind CSS v4 的小学生 AI 学习助手前端，前后端分离，通过 `/api` 调用 FastAPI 后端。
 
 ## 功能
 
-- 💬 问答（SSE 流式 + 🎤 语音 + 📷 拍照识题 + 🔊 朗读）
+### 默认简单聊天模式（`KIDS_SIMPLE_CHAT_MODE=true`）
+
+- 💬 **聊天**：SSE 流式 + 🎤 语音 + 🔊 朗读；Agent 自动检索知识库
+- 无需 Onboarding，学生端仅显示「聊天」Tab
+
+### 完整学习模式（后端关闭 `KIDS_SIMPLE_CHAT_MODE`）
+
 - 🎯 智能练习（KP 学情推题 · Jarvis 闭环）
-- 📝 出题练习 + 作答 + 判分
-- 🌟 我的进步（T4 鼓励性进度视图）
-- 📋 20 分钟微计划
-- 📇 学习卡片
-- 👨‍👩‍👧 家长模式（学情 / inbox / 周报）
+- 🌟 我的进步 / 📋 微计划 / 📇 学习卡片 / 📖 Wiki
 - 🎒 首次 Onboarding（年级/单元）
+
+### 家长模式
+
+- 📚 **知识库**：上传 txt/pdf/docx/图片，检索预览，重建索引
+- 👨‍👩‍👧 学情 / inbox / 周报 / KP 审核
+
+### 通用
+
+- 📝 出题练习 + 作答 + 判分
 - 🌍 中文 / English · 12 套主题 · JWT 登录
 
-详见 [../docs/JARVIS_LEARNING.md](../docs/JARVIS_LEARNING.md)
+详见 [../docs/JARVIS_LEARNING.md](../docs/JARVIS_LEARNING.md) · [../../docs/知识库系统设计.md](../../docs/知识库系统设计.md)
 
 ## 本地开发
 
@@ -37,8 +48,7 @@ npm run preview    # 本地预览构建产物
 
 ## 鉴权
 
-后端开启 `KIDS_API_KEYS` 时，在 `.env` 设置 `VITE_API_KEY=<key>`，
-`src/lib/api.ts` 会自动在请求头附带 `X-API-Key`。
+后端开启 JWT 或 `KIDS_API_KEYS` 时，前端经登录页获取 token，或于 `.env` 设置 `VITE_API_KEY`。
 
 ## Docker
 
@@ -51,10 +61,17 @@ docker build -t kid-frontend .
 
 ```
 src/
-├── main.tsx              入口
-├── App.tsx              应用外壳（侧边栏 + 页签）
-├── index.css           Tailwind v4 + 主题 CSS 变量
-├── lib/                api 客户端 / 类型 / 文案(i18n)
-├── hooks/              useHealth 健康探测
-└── components/         Sidebar / ChatPanel / QuizPanel
+├── main.tsx
+├── App.tsx              应用外壳（简单/完整模式切换）
+├── index.css            Tailwind v4 + 主题
+├── lib/
+│   ├── api.ts           聊天 / 出题 / 鉴权
+│   ├── learning-api.ts  学习域 API
+│   └── knowledge-api.ts 资料库 API
+├── hooks/               useHealth
+└── components/
+    ├── ChatPanel.tsx
+    ├── KnowledgeLibraryPanel.tsx
+    ├── ParentDashboard.tsx
+    └── …
 ```
